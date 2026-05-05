@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chess — 思考の盤</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Crimson+Pro:ital,wght@0,300;0,400;1,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0c0a; --surface: #1a1714; --surface2: #241f1a; --border: #3a3228;
+    --light-sq: #e8d5b0; --dark-sq: #8b6340;
+    --selected: #c8b400; --selected-dark: #a09200;
+    --move-dot: rgba(40,160,40,0.7); --capture-ring: rgba(200,30,30,0.7);
+    --hint-glow: rgba(80,160,255,0.6);
+    --gold: #c9a84c; --gold-light: #e8c86c;
+    --text: #e8e0d0; --text-muted: #8a7a60;
+    --check: rgba(220,40,40,0.5);
+    --white-piece: #f5edd8; --black-piece: #1a1208;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Crimson Pro', serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; padding: 20px 10px;
+    background-image:
+      radial-gradient(ellipse at 20% 20%, rgba(60,40,10,0.4) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 80%, rgba(30,20,5,0.3) 0%, transparent 60%);
+  }
+  h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 900;
+    letter-spacing: 0.08em; color: var(--gold);
+    text-shadow: 0 0 40px rgba(201,168,76,0.3); margin-bottom: 4px;
+  }
+  .subtitle { font-style: italic; color: var(--text-muted); font-size: 0.95rem; letter-spacing: 0.15em; margin-bottom: 20px; }
+  .game-wrapper { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 900px; }
+
+  /* SIDEBAR */
+  .sidebar { display: flex; flex-direction: column; gap: 14px; width: 200px; min-width: 180px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px; }
+  .panel-title { font-family: 'Playfair Display', serif; font-size: 0.75rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+
+  .difficulty-btns { display: flex; flex-direction: column; gap: 6px; }
+  .diff-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-family: 'Crimson Pro', serif; font-size: 0.9rem; padding: 7px 10px; cursor: pointer; transition: all 0.2s; text-align: left; display: flex; align-items: center; gap: 8px; }
+  .diff-btn:hover { border-color: var(--gold); color: var(--text); }
+  .diff-btn.active { background: rgba(201,168,76,0.12); border-color: var(--gold); color: var(--gold); }
+  .diff-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .diff-btn[data-level="1"] .diff-dot { background: #4caf50; }
+  .diff-btn[data-level="2"] .diff-dot { background: #ff9800; }
+  .diff-btn[data-level="3"] .diff-dot { background: #f44336; }
+
+  .status-text { font-size: 0.95rem; color: var(--text-muted); line-height: 1.5; }
+  .status-text.check { color: #ff6b6b; font-weight: bold; }
+  .status-text.checkmate { color: #ff4444; font-weight: bold; }
+  .status-text.stalemate { color: var(--gold); font-weight: bold; }
+  .turn-indicator { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .turn-piece { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border); transition: all 0.3s; }
+  .turn-piece.white { background: var(--white-piece); }
+  .turn-piece.black { background: var(--black-piece); border-color: #555; }
+  .turn-label { font-size: 0.85rem; color: var(--text-muted); }
+
+  .action-btns { display: flex; flex-direction: column; gap: 8px; }
+  .action-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: 'Crimson Pro', serif; font-size: 0.9rem; padding: 8px 12px; cursor: pointer; transition: all 0.2s; letter-spacing: 0.03em; display: flex; align-items: center; gap: 8px; }
+  .action-btn:hover:not(:disabled) { border-color: var(--gold); background: rgba(201,168,76,0.1); color: var(--gold); }
+  .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .action-btn.primary { border-color: var(--gold); color: var(--gold); }
+  .action-btn.primary:hover { background: rgba(201,168,76,0.2); }
+  .hint-box { background: rgba(80,160,255,0.06); border: 1px solid rgba(80,160,255,0.2); border-radius: 4px; padding: 10px; font-size: 0.88rem; color: #a0c8ff; line-height: 1.5; min-height: 44px; display: none; }
+  .hint-box.visible { display: block; }
+  .thinking-bar { height: 3px; background: linear-gradient(90deg, transparent, var(--gold), transparent); width: 100%; border-radius: 2px; animation: thinking 1s linear infinite; display: none; }
+  .thinking-bar.active { display: block; }
+  @keyframes thinking { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+  .options-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toggle-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-family: 'Crimson Pro', serif; font-size: 0.82rem; padding: 5px 8px; cursor: pointer; transition: all 0.2s; flex: 1; text-align: center; white-space: nowrap; }
+  .toggle-btn.on { border-color: var(--gold); color: var(--gold); background: rgba(201,168,76,0.08); }
+  .toggle-btn:hover { border-color: var(--gold); }
+
+  /* BOARD */
+  .board-container { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .rank-label, .file-label { font-family: 'Playfair Display', serif; font-size: 0.7rem; color: var(--text-muted); width: 16px; text-align: center; letter-spacing: 0.05em; }
+  .file-labels { display: flex; gap: 0; padding-left: 22px; padding-right: 6px; }
+  .file-labels span { width: 64px; text-align: center; font-family: 'Playfair Display', serif; font-size: 0.7rem; color: var(--text-muted); }
+  #board { display: grid; grid-template-columns: repeat(8, 64px); grid-template-rows: repeat(8, 64px); border: 2px solid var(--gold); box-shadow: 0 0 0 1px var(--bg), 0 0 0 3px var(--border), 0 8px 40px rgba(0,0,0,0.6), 0 0 60px rgba(201,168,76,0.06); }
+  .square { width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer; transition: filter 0.15s; user-select: none; }
+  .square.light { background: var(--light-sq); }
+  .square.dark { background: var(--dark-sq); }
+  .square.selected { background: var(--selected) !important; }
+  .square.selected.dark { background: var(--selected-dark) !important; }
+  .square.in-check { background: var(--check) !important; }
+  .square.last-move-from { filter: brightness(1.2); }
+  .square.last-move-to { filter: brightness(1.25); }
+  .square.hint-sq { box-shadow: inset 0 0 0 3px var(--hint-glow), 0 0 12px var(--hint-glow); }
+  .move-dot-el { position: absolute; width: 22px; height: 22px; border-radius: 50%; background: var(--move-dot); pointer-events: none; animation: dotIn 0.15s ease-out; }
+  .capture-ring-el { position: absolute; width: 58px; height: 58px; border-radius: 50%; border: 4px solid var(--capture-ring); pointer-events: none; animation: dotIn 0.15s ease-out; }
+  @keyframes dotIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .piece { font-size: 44px; line-height: 1; cursor: pointer; transition: transform 0.1s; position: relative; z-index: 1; user-select: none; pointer-events: none; }
+  /* White pieces: bright white with dark outline */
+  .piece-w {
+    color: #ffffff;
+    -webkit-text-stroke: 1.5px #2a1a00;
+    text-shadow:
+      0 0 8px rgba(255,255,255,0.5),
+      1px 1px 3px rgba(0,0,0,0.9),
+      -1px -1px 3px rgba(0,0,0,0.6);
+  }
+  /* Black pieces: near-black with light outline for contrast on dark squares */
+  .piece-b {
+    color: #111111;
+    -webkit-text-stroke: 1.5px #e8c87a;
+    text-shadow:
+      1px 1px 0 #c9a84c,
+      -1px -1px 0 #c9a84c,
+      0 0 6px rgba(201,168,76,0.4);
+  }
+  /* Tutorial board piece colors */
+  .tpiece-w {
+    color: #ffffff;
+    -webkit-text-stroke: 1.2px #2a1a00;
+    text-shadow: 0 0 6px rgba(255,255,255,0.4), 1px 1px 3px rgba(0,0,0,0.9);
+  }
+  .tpiece-b {
+    color: #111111;
+    -webkit-text-stroke: 1.2px #c9a84c;
+    text-shadow: 1px 1px 0 #c9a84c, -1px -1px 0 #c9a84c;
+  }
+  .square:hover .piece { transform: scale(1.05); }
+  .square.selected .piece { transform: scale(1.1); }
+
+  /* captured / move log */
+  .move-log { max-height: 140px; overflow-y: auto; font-size: 0.82rem; color: var(--text-muted); line-height: 1.8; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .move-log-entry { display: flex; gap: 6px; }
+  .move-log-entry .move-num { color: var(--gold); min-width: 24px; }
+  .move-log-entry .move-w { color: var(--text); min-width: 50px; }
+  .captured { display: flex; flex-wrap: wrap; gap: 2px; min-height: 28px; font-size: 1.3rem; }
+
+  /* PROMO MODAL */
+  #promo-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; }
+  #promo-modal.show { display: flex; }
+  .promo-box { background: var(--surface); border: 1px solid var(--gold); border-radius: 8px; padding: 24px; text-align: center; }
+  .promo-box h3 { font-family: 'Playfair Display', serif; color: var(--gold); margin-bottom: 16px; letter-spacing: 0.1em; }
+  .promo-choices { display: flex; gap: 12px; justify-content: center; }
+  .promo-choice { font-size: 52px; cursor: pointer; padding: 8px; border-radius: 6px; transition: background 0.2s; }
+  .promo-choice:hover { background: rgba(201,168,76,0.2); }
+
+  /* ===== TUTORIAL MODAL ===== */
+  #tutorial-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 200; align-items: center; justify-content: center; padding: 12px; }
+  #tutorial-modal.show { display: flex; }
+  .tut-box { background: var(--surface); border: 1px solid var(--gold); border-radius: 10px; width: 100%; max-width: 820px; max-height: 92vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 40px rgba(201,168,76,0.08); overflow: hidden; }
+
+  /* Header */
+  .tut-header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tut-header h2 { font-family: 'Playfair Display', serif; color: var(--gold); font-size: 1.1rem; letter-spacing: 0.06em; white-space: nowrap; }
+  .tut-progress-wrap { flex: 1; display: flex; align-items: center; gap: 10px; }
+  .tut-progress-bar { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .tut-progress-fill { height: 100%; background: var(--gold); border-radius: 2px; transition: width 0.4s; }
+  .tut-step-label { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+  .tut-close { background: none; border: none; color: var(--text-muted); font-size: 1.3rem; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color 0.2s; margin-left: 4px; }
+  .tut-close:hover { color: var(--text); }
+
+  /* Body: left explanation + right board */
+  .tut-body { display: flex; flex: 1; overflow: hidden; }
+  .tut-left { width: 300px; min-width: 260px; padding: 20px 18px; border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .tut-right { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; gap: 12px; background: rgba(0,0,0,0.2); }
+
+  .tut-step-badge { display: inline-block; font-family: 'Playfair Display', serif; font-size: 0.65rem; letter-spacing: 0.2em; color: var(--gold); border: 1px solid rgba(201,168,76,0.4); border-radius: 3px; padding: 2px 8px; background: rgba(201,168,76,0.07); }
+  .tut-step-title { font-family: 'Playfair Display', serif; font-size: 1.15rem; color: var(--text); line-height: 1.3; }
+  .tut-step-body { font-size: 0.93rem; color: var(--text-muted); line-height: 1.75; }
+  .tut-step-body b { color: var(--gold-light); font-weight: normal; }
+  .tut-step-body ul { padding-left: 18px; margin-top: 6px; }
+  .tut-step-body li { margin-bottom: 4px; }
+
+  /* Task box */
+  .tut-task-box { background: rgba(80,160,255,0.06); border: 1px solid rgba(80,160,255,0.25); border-radius: 6px; padding: 12px; }
+  .tut-task-label { font-size: 0.72rem; letter-spacing: 0.15em; color: #7cb8ff; margin-bottom: 6px; font-family: 'Playfair Display', serif; }
+  .tut-task-text { font-size: 0.9rem; color: var(--text); line-height: 1.6; }
+
+  /* Success box */
+  .tut-ok-box { background: rgba(80,200,80,0.07); border: 1px solid rgba(80,200,80,0.3); border-radius: 6px; padding: 12px; display: flex; align-items: flex-start; gap: 10px; animation: fadeIn 0.3s ease; }
+  @keyframes fadeIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0); } }
+  .tut-ok-icon { font-size: 1.2rem; color: #6ddc6d; flex-shrink: 0; }
+  .tut-ok-text { font-size: 0.9rem; color: #a0e0a0; line-height: 1.6; }
+
+  /* Tutorial board */
+  .tut-board-wrap { position: relative; }
+  #tut-board { display: grid; grid-template-columns: repeat(8, 52px); grid-template-rows: repeat(8, 52px); border: 2px solid var(--gold); box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
+  .tut-sq { width: 52px; height: 52px; display: flex; align-items: center; justify-content: center; position: relative; cursor: default; user-select: none; }
+  .tut-sq.clickable { cursor: pointer; }
+  .tut-sq.light { background: var(--light-sq); }
+  .tut-sq.dark { background: var(--dark-sq); }
+  .tut-sq.thl { background: rgba(60,180,60,0.55) !important; }
+  .tut-sq.thc { background: rgba(210,50,50,0.55) !important; }
+  .tut-sq.thg { background: rgba(201,168,76,0.6) !important; }
+  .tut-sq.thb { background: rgba(80,140,255,0.5) !important; }
+  .tut-sq.tsel { background: var(--selected) !important; }
+  .tut-sq.tsel.dark { background: var(--selected-dark) !important; }
+  .tut-sq.tcheck { background: var(--check) !important; }
+  .tut-sq .tpiece { font-size: 36px; line-height: 1; pointer-events: none; }
+  .tut-sq .tmove-dot { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: var(--move-dot); pointer-events: none; animation: dotIn 0.15s ease-out; }
+  .tut-sq .tcap-ring { position: absolute; width: 46px; height: 46px; border-radius: 50%; border: 4px solid var(--capture-ring); pointer-events: none; }
+
+  /* Caption under tut board */
+  .tut-caption { font-size: 0.8rem; color: var(--text-muted); font-style: italic; text-align: center; max-width: 420px; }
+
+  /* Legend row */
+  .tut-legend { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  .tut-legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.8rem; color: var(--text-muted); }
+  .tut-legend-dot { width: 14px; height: 14px; border-radius: 50%; }
+  .tut-legend-ring { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--capture-ring); }
+
+  /* Footer */
+  .tut-footer { display: flex; align-items: center; justify-content: space-between; padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0; gap: 10px; }
+  .tut-nav-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: 'Crimson Pro', serif; font-size: 0.9rem; padding: 7px 18px; cursor: pointer; transition: all 0.2s; }
+  .tut-nav-btn:hover:not(:disabled) { border-color: var(--gold); color: var(--gold); }
+  .tut-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .tut-nav-btn.primary { border-color: var(--gold); color: var(--gold); background: rgba(201,168,76,0.1); }
+  .tut-skip-btn { background: none; border: none; color: var(--text-muted); font-family: 'Crimson Pro', serif; font-size: 0.85rem; cursor: pointer; padding: 4px 8px; text-decoration: underline; }
+  .tut-skip-btn:hover { color: var(--text); }
+  .tut-footer-center { flex: 1; display: flex; justify-content: center; }
+
+  /* Enemy move preview squares */
+  .square.enemy-move { background: rgba(200,60,60,0.28) !important; }
+  .square.enemy-from { outline: 2px solid rgba(210,80,80,0.7); outline-offset: -2px; }
+
+  /* Semi-auto mode: suggested from/to glow */
+  .square.semiauto-from {
+    box-shadow: inset 0 0 0 3px rgba(180,120,255,0.9);
+    animation: saPulse 1.2s ease-in-out infinite;
+  }
+  .square.semiauto-to {
+    background: rgba(160,80,255,0.35) !important;
+    box-shadow: inset 0 0 0 2px rgba(180,120,255,0.6);
+  }
+  @keyframes saPulse {
+    0%,100% { box-shadow: inset 0 0 0 3px rgba(180,120,255,0.9), 0 0 10px rgba(180,120,255,0.3); }
+    50% { box-shadow: inset 0 0 0 3px rgba(220,160,255,1), 0 0 20px rgba(180,120,255,0.6); }
+  }
+
+  /* Hint box improved */
+  .hint-box {
+    margin-top: 8px;
+    background: rgba(80,160,255,0.06);
+    border: 1px solid rgba(80,160,255,0.2);
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 0.88rem;
+    color: #a0c8ff;
+    line-height: 1.6;
+    display: none;
+  }
+  .hint-box.visible { display: block; }
+  .hint-from { color: #ffe080; font-weight: bold; }
+  .hint-to   { color: #80ff90; font-weight: bold; }
+  .hint-piece { font-size: 1.1em; }
+
+  @media (max-width: 660px) {
+    .tut-body { flex-direction: column; overflow-y: auto; }
+    .tut-left { width: 100%; border-right: none; border-bottom: 1px solid var(--border); padding: 14px; max-height: 40vh; overflow-y: auto; }
+    .tut-right { padding: 12px; }
+    #tut-board { grid-template-columns: repeat(8, 36px); grid-template-rows: repeat(8, 36px); }
+    .tut-sq { width: 36px; height: 36px; }
+    .tut-sq .tpiece { font-size: 24px; }
+    .tut-sq .tmove-dot { width: 12px; height: 12px; }
+    .tut-sq .tcap-ring { width: 32px; height: 32px; }
+  }
+  @media (max-width: 600px) {
+    #board { grid-template-columns: repeat(8, 42px); grid-template-rows: repeat(8, 42px); }
+    .square { width: 42px; height: 42px; }
+    .piece { font-size: 28px; }
+    .file-labels span { width: 42px; }
+    .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; }
+    .panel { flex: 1; min-width: 160px; }
+    .capture-ring-el { width: 38px; height: 38px; }
+    .move-dot-el { width: 16px; height: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>思考の盤</h1>
+<p class="subtitle">Chess — 三つの深さで挑む</p>
+
+<div class="game-wrapper">
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-title">難易度</div>
+      <div class="difficulty-btns">
+        <button class="diff-btn active" data-level="1" onclick="setDifficulty(1)"><span class="diff-dot"></span>入門 — Novice</button>
+        <button class="diff-btn" data-level="2" onclick="setDifficulty(2)"><span class="diff-dot"></span>中級 — Adept</button>
+        <button class="diff-btn" data-level="3" onclick="setDifficulty(3)"><span class="diff-dot"></span>上級 — Master</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">表示設定</div>
+      <div class="options-row">
+        <button class="toggle-btn on" id="toggle-moves" onclick="toggleMoveHints()">移動候補</button>
+        <button class="toggle-btn on" id="toggle-coords" onclick="toggleCoords()">座標</button>
+        <button class="toggle-btn" id="toggle-enemy" onclick="toggleEnemyView()">敵駒確認</button>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">ステータス</div>
+      <div id="status-text" class="status-text">白番の手番</div>
+      <div class="turn-indicator">
+        <div class="turn-piece white" id="turn-piece"></div>
+        <div class="turn-label" id="turn-label">あなたの番</div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">アクション</div>
+      <div class="action-btns">
+        <button class="action-btn primary" onclick="getHint()">💡 ヒントを表示</button>
+        <button class="action-btn" id="btn-semiauto" onclick="toggleSemiAuto()" style="border-color:#b07fff;color:#b07fff;">🤝 AIに1手代わりに指してもらう</button>
+        <button class="action-btn" onclick="undoMove()">↩ 手を戻す</button>
+        <button class="action-btn" onclick="newGame()">✦ 新しいゲーム</button>
+        <button class="action-btn" onclick="openTutorial()" style="border-color:#7cb8ff;color:#7cb8ff;">📖 チュートリアル</button>
+      </div>
+      <div class="hint-box" id="hint-box"></div>
+      <div class="thinking-bar" id="thinking-bar"></div>
+    </div>
+  </div>
+
+  <div class="board-container">
+    <div class="file-labels" id="file-labels">
+      <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <div id="rank-labels-left" style="display:flex;flex-direction:column;gap:0;">
+        <span class="rank-label">8</span><span class="rank-label">7</span><span class="rank-label">6</span>
+        <span class="rank-label">5</span><span class="rank-label">4</span><span class="rank-label">3</span>
+        <span class="rank-label">2</span><span class="rank-label">1</span>
+      </div>
+      <div id="board"></div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-title">取得した駒</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">白が取得</div>
+      <div class="captured" id="captured-white"></div>
+      <div style="font-size:0.75rem;color:var(--text-muted);margin:8px 0 4px;">黒が取得</div>
+      <div class="captured" id="captured-black"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">棋譜</div>
+      <div class="move-log" id="move-log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PROMO MODAL -->
+<div id="promo-modal">
+  <div class="promo-box">
+    <h3>プロモーション</h3>
+    <div class="promo-choices" id="promo-choices"></div>
+  </div>
+</div>
+
+<!-- TUTORIAL MODAL -->
+<div id="tutorial-modal">
+  <div class="tut-box">
+    <div class="tut-header">
+      <h2>📖 チュートリアル</h2>
+      <div class="tut-progress-wrap">
+        <div class="tut-progress-bar"><div class="tut-progress-fill" id="tut-prog"></div></div>
+        <span class="tut-step-label" id="tut-step-lbl">1 / 12</span>
+      </div>
+      <button class="tut-close" onclick="closeTutorial()">✕</button>
+    </div>
+    <div class="tut-body">
+      <div class="tut-left">
+        <div class="tut-step-badge" id="tut-badge">STEP 1</div>
+        <div class="tut-step-title" id="tut-title"></div>
+        <div class="tut-step-body" id="tut-body"></div>
+        <div class="tut-task-box" id="tut-task" style="display:none">
+          <div class="tut-task-label">📌 やってみよう</div>
+          <div class="tut-task-text" id="tut-task-text"></div>
+        </div>
+        <div class="tut-ok-box" id="tut-ok" style="display:none">
+          <div class="tut-ok-icon">✓</div>
+          <div class="tut-ok-text" id="tut-ok-text"></div>
+        </div>
+      </div>
+      <div class="tut-right">
+        <div class="tut-board-wrap"><div id="tut-board"></div></div>
+        <div class="tut-caption" id="tut-caption"></div>
+        <div class="tut-legend" id="tut-legend" style="display:none">
+          <div class="tut-legend-item"><div class="tut-legend-dot" style="background:var(--move-dot)"></div>移動できるマス</div>
+          <div class="tut-legend-item"><div class="tut-legend-ring"></div>取れる駒</div>
+        </div>
+      </div>
+    </div>
+    <div class="tut-footer">
+      <button class="tut-nav-btn" id="tut-prev" onclick="tutNav(-1)" disabled>← 戻る</button>
+      <div class="tut-footer-center">
+        <button class="tut-skip-btn" id="tut-skip" onclick="tutSkip()" style="display:none">この操作をスキップ</button>
+      </div>
+      <button class="tut-nav-btn" id="tut-next" onclick="tutNav(1)">次へ →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+
+// ========== PIECES ==========
+const PIECES = {
+  wK:'♔', wQ:'♕', wR:'♖', wB:'♗', wN:'♘', wP:'♙',
+  bK:'♔', bQ:'♕', bR:'♖', bB:'♗', bN:'♘', bP:'♙'
+};
+const PIECE_VALUES = { K:20000, Q:900, R:500, B:330, N:320, P:100 };
+
+// ========== GAME STATE ==========
+let board = [], turn = 'w', selected = null, legalMoves = [], difficulty = 1;
+let castleRights = { wK:true, wQ:true, bK:true, bQ:true };
+let enPassantTarget = null;
+let history = [];
+let gameOver = false;
+let lastMove = null;
+let showMoveHints = true;
+let showCoords = true;
+let capturedByWhite = [], capturedByBlack = [];
+let moveLog = [];
+
+function initBoard() {
+  board = Array(8).fill(null).map(()=>Array(8).fill(null));
+  const backRank = ['R','N','B','Q','K','B','N','R'];
+  for(let c=0;c<8;c++){
+    board[0][c] = 'b'+backRank[c];
+    board[1][c] = 'bP';
+    board[6][c] = 'wP';
+    board[7][c] = 'w'+backRank[c];
+  }
+}
+
+function newGame() {
+  initBoard();
+  turn = 'w';
+  selected = null;
+  legalMoves = [];
+  castleRights = { wK:true, wQ:true, bK:true, bQ:true };
+  enPassantTarget = null;
+  history = [];
+  gameOver = false;
+  lastMove = null;
+  capturedByWhite = [];
+  capturedByBlack = [];
+  moveLog = [];
+  document.getElementById('hint-box').classList.remove('visible');
+  document.getElementById('hint-box').textContent = '';
+  document.getElementById('status-text').className = 'status-text';
+  document.getElementById('status-text').textContent = '白番の手番';
+  updateTurnIndicator();
+  renderBoard();
+  renderCaptured();
+  renderMoveLog();
+}
+
+function setDifficulty(d) {
+  difficulty = d;
+  document.querySelectorAll('.diff-btn').forEach(b=>{
+    b.classList.toggle('active', parseInt(b.dataset.level)===d);
+  });
+}
+
+function toggleMoveHints() {
+  showMoveHints = !showMoveHints;
+  document.getElementById('toggle-moves').classList.toggle('on', showMoveHints);
+  renderBoard();
+}
+
+function toggleCoords() {
+  showCoords = !showCoords;
+  document.getElementById('toggle-coords').classList.toggle('on', showCoords);
+  document.getElementById('file-labels').style.visibility = showCoords ? 'visible' : 'hidden';
+  document.getElementById('rank-labels-left').style.visibility = showCoords ? 'visible' : 'hidden';
+}
+
+// ========== RENDER ==========
+function renderBoard() {
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+  const kingPos = findKing(turn);
+  const inCheck = kingPos && isSquareAttacked(board, kingPos[0], kingPos[1], turn==='w'?'b':'w');
+
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      const sq = document.createElement('div');
+      sq.className = 'square ' + ((r+c)%2===0?'light':'dark');
+      sq.dataset.r = r; sq.dataset.c = c;
+
+      // highlights
+      if(selected && selected[0]===r && selected[1]===c) sq.classList.add('selected');
+      if(inCheck && board[r][c]==='wK' && turn==='w') sq.classList.add('in-check');
+      if(inCheck && board[r][c]==='bK' && turn==='b') sq.classList.add('in-check');
+      if(lastMove){
+        if(lastMove.from[0]===r && lastMove.from[1]===c) sq.classList.add('last-move-from');
+        if(lastMove.to[0]===r && lastMove.to[1]===c) sq.classList.add('last-move-to');
+      }
+
+      // move indicators
+      if(showMoveHints && selected){
+        const isTarget = legalMoves.some(m=>m[0]===r&&m[1]===c);
+        if(isTarget){
+          const dot = document.createElement('div');
+          if(board[r][c]){
+            dot.className = 'capture-ring-el';
+          } else {
+            dot.className = 'move-dot-el';
+          }
+          sq.appendChild(dot);
+        }
+      }
+
+      // piece
+      if(board[r][c]){
+        const p = document.createElement('div');
+        p.className = 'piece ' + (board[r][c][0]==='w' ? 'piece-w' : 'piece-b');
+        p.textContent = PIECES[board[r][c]];
+        sq.appendChild(p);
+      }
+
+      sq.addEventListener('click', ()=>handleClick(r,c));
+      el.appendChild(sq);
+    }
+  }
+}
+
+function renderCaptured() {
+  const captureSymbols = {
+    Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟',
+  };
+  const captureSymbolsW = {
+    Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',
+  };
+  document.getElementById('captured-white').textContent = 
+    capturedByWhite.map(p=>captureSymbols[p[1]]||p).join('');
+  document.getElementById('captured-black').textContent = 
+    capturedByBlack.map(p=>captureSymbolsW[p[1]]||p).join('');
+}
+
+function renderMoveLog() {
+  const el = document.getElementById('move-log');
+  el.innerHTML = '';
+  for(let i=0;i<moveLog.length;i+=2){
+    const entry = document.createElement('div');
+    entry.className = 'move-log-entry';
+    entry.innerHTML = `<span class="move-num">${Math.floor(i/2)+1}.</span>`+
+      `<span class="move-w">${moveLog[i]||''}</span>`+
+      `<span class="move-b">${moveLog[i+1]||''}</span>`;
+    el.appendChild(entry);
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateTurnIndicator() {
+  const tp = document.getElementById('turn-piece');
+  const tl = document.getElementById('turn-label');
+  if(turn==='w'){
+    tp.className = 'turn-piece white';
+    tl.textContent = 'あなたの番';
+  } else {
+    tp.className = 'turn-piece black';
+    tl.textContent = 'AIの思考中...';
+  }
+}
+
+// ========== CHESS LOGIC ==========
+function color(piece){ return piece ? piece[0] : null; }
+function pieceType(piece){ return piece ? piece[1] : null; }
+function opponent(c){ return c==='w'?'b':'w'; }
+
+function findKing(c) {
+  for(let r=0;r<8;r++) for(let cc=0;cc<8;cc++)
+    if(board[r][cc]===c+'K') return [r,cc];
+  return null;
+}
+
+function findKingInBoard(b, c) {
+  for(let r=0;r<8;r++) for(let cc=0;cc<8;cc++)
+    if(b[r][cc]===c+'K') return [r,cc];
+  return null;
+}
+
+function isSquareAttacked(b, r, c, byColor) {
+  // Check all opponent pieces
+  for(let rr=0;rr<8;rr++) for(let cc=0;cc<8;cc++){
+    const p = b[rr][cc];
+    if(!p || color(p)!==byColor) continue;
+    const t = pieceType(p);
+    if(t==='P'){
+      const dir = byColor==='w'?-1:1;
+      if(rr+dir===r && (cc-1===c||cc+1===c)) return true;
+    } else if(t==='N'){
+      const nd=[[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]];
+      if(nd.some(([dr,dc])=>rr+dr===r&&cc+dc===c)) return true;
+    } else if(t==='B'||t==='Q'){
+      const dirs=[[1,1],[1,-1],[-1,1],[-1,-1]];
+      for(const [dr,dc] of dirs){
+        let nr=rr+dr,nc=cc+dc;
+        while(nr>=0&&nr<8&&nc>=0&&nc<8){
+          if(nr===r&&nc===c) return true;
+          if(b[nr][nc]) break;
+          nr+=dr; nc+=dc;
+        }
+      }
+    }
+    if(t==='R'||t==='Q'){
+      const dirs=[[1,0],[-1,0],[0,1],[0,-1]];
+      for(const [dr,dc] of dirs){
+        let nr=rr+dr,nc=cc+dc;
+        while(nr>=0&&nr<8&&nc>=0&&nc<8){
+          if(nr===r&&nc===c) return true;
+          if(b[nr][nc]) break;
+          nr+=dr; nc+=dc;
+        }
+      }
+    }
+    if(t==='K'){
+      if(Math.abs(rr-r)<=1&&Math.abs(cc-c)<=1) return true;
+    }
+  }
+  return false;
+}
+
+function getRawMoves(b, r, c, cr, ept) {
+  const piece = b[r][c];
+  if(!piece) return [];
+  const col = color(piece);
+  const t = pieceType(piece);
+  const moves = [];
+  const opp = opponent(col);
+
+  function add(nr,nc){ if(nr>=0&&nr<8&&nc>=0&&nc<8) moves.push([nr,nc]); }
+  function addIfEmpty(nr,nc){ if(nr>=0&&nr<8&&nc>=0&&nc<8&&!b[nr][nc]) moves.push([nr,nc]); }
+  function addIfCapture(nr,nc){ if(nr>=0&&nr<8&&nc>=0&&nc<8&&b[nr][nc]&&color(b[nr][nc])===opp) moves.push([nr,nc]); }
+
+  if(t==='P'){
+    const dir = col==='w'?-1:1;
+    const startRow = col==='w'?6:1;
+    // forward
+    if(r+dir>=0&&r+dir<8&&!b[r+dir][c]) {
+      moves.push([r+dir,c]);
+      if(r===startRow&&!b[r+2*dir][c]) moves.push([r+2*dir,c]);
+    }
+    // captures
+    addIfCapture(r+dir,c-1); addIfCapture(r+dir,c+1);
+    // en passant
+    if(ept){
+      if(r+dir===ept[0]&&(c-1===ept[1]||c+1===ept[1])) moves.push([ept[0],ept[1]]);
+    }
+  } else if(t==='N'){
+    [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]].forEach(([dr,dc])=>{
+      const nr=r+dr,nc=c+dc;
+      if(nr>=0&&nr<8&&nc>=0&&nc<8&&color(b[nr][nc])!==col) moves.push([nr,nc]);
+    });
+  } else if(t==='B'||t==='Q'){
+    for(const [dr,dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]){
+      let nr=r+dr,nc=c+dc;
+      while(nr>=0&&nr<8&&nc>=0&&nc<8){
+        if(!b[nr][nc]){ moves.push([nr,nc]); }
+        else { if(color(b[nr][nc])===opp) moves.push([nr,nc]); break; }
+        nr+=dr; nc+=dc;
+      }
+    }
+    if(t==='B') return moves;
+  }
+  if(t==='R'||t==='Q'){
+    for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      let nr=r+dr,nc=c+dc;
+      while(nr>=0&&nr<8&&nc>=0&&nc<8){
+        if(!b[nr][nc]){ moves.push([nr,nc]); }
+        else { if(color(b[nr][nc])===opp) moves.push([nr,nc]); break; }
+        nr+=dr; nc+=dc;
+      }
+    }
+  }
+  if(t==='K'){
+    for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]){
+      const nr=r+dr,nc=c+dc;
+      if(nr>=0&&nr<8&&nc>=0&&nc<8&&color(b[nr][nc])!==col) moves.push([nr,nc]);
+    }
+    // castling
+    const backR = col==='w'?7:0;
+    if(r===backR&&c===4&&!isSquareAttacked(b,r,4,opp)){
+      if(cr[col+'K']&&!b[backR][5]&&!b[backR][6]&&
+         !isSquareAttacked(b,backR,5,opp)&&!isSquareAttacked(b,backR,6,opp))
+        moves.push([backR,6]);
+      if(cr[col+'Q']&&!b[backR][3]&&!b[backR][2]&&!b[backR][1]&&
+         !isSquareAttacked(b,backR,3,opp)&&!isSquareAttacked(b,backR,2,opp))
+        moves.push([backR,2]);
+    }
+  }
+  return moves;
+}
+
+function getLegalMoves(b, r, c, cr, ept) {
+  const raw = getRawMoves(b, r, c, cr, ept);
+  const col = color(b[r][c]);
+  return raw.filter(([nr,nc])=>{
+    const nb = copyBoard(b);
+    applyMoveToBoard(nb, r, c, nr, nc, ept);
+    const kp = findKingInBoard(nb, col);
+    return kp && !isSquareAttacked(nb, kp[0], kp[1], opponent(col));
+  });
+}
+
+function getAllLegalMoves(b, col, cr, ept) {
+  const moves = [];
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    if(b[r][c]&&color(b[r][c])===col){
+      getLegalMoves(b,r,c,cr,ept).forEach(to=>moves.push({from:[r,c],to}));
+    }
+  }
+  return moves;
+}
+
+function copyBoard(b){ return b.map(row=>[...row]); }
+
+function applyMoveToBoard(b, r, c, nr, nc, ept) {
+  const piece = b[r][c];
+  const t = pieceType(piece);
+  const col = color(piece);
+  // en passant capture
+  if(t==='P'&&ept&&nr===ept[0]&&nc===ept[1]){
+    const capRow = col==='w'?nr+1:nr-1;
+    b[capRow][nc] = null;
+  }
+  // castling
+  if(t==='K'){
+    if(c===4&&nc===6){ b[r][7]=null; b[r][5]=col+'R'; }
+    if(c===4&&nc===2){ b[r][0]=null; b[r][3]=col+'R'; }
+  }
+  b[nr][nc] = piece;
+  b[r][c] = null;
+}
+
+function toAlgebraic(r,c){ return 'abcdefgh'[c]+''+(8-r); }
+
+function moveToNotation(b, fr, fc, tr, tc, promotion='') {
+  const piece = b[fr][fc];
+  const t = pieceType(piece);
+  const capture = b[tr][tc] ? 'x' : '';
+  const dest = toAlgebraic(tr,tc);
+  if(t==='K'&&fc===4&&tc===6) return 'O-O';
+  if(t==='K'&&fc===4&&tc===2) return 'O-O-O';
+  if(t==='P') return (capture?'abcdefgh'[fc]+'x':'')+dest+(promotion?'='+promotion:'');
+  const sym = {K:'K',Q:'Q',R:'R',B:'B',N:'N'}[t];
+  return sym+capture+dest;
+}
+
+// ========== CLICK HANDLING ==========
+function handleClick(r, c) {
+  if(gameOver) return;
+  clearSemiAutoHighlights();
+  clearEnemyPreview();
+  document.getElementById('hint-box').classList.remove('visible');
+
+  // ---- Enemy piece view (any time, non-destructive) ----
+  if(showEnemyMoves && board[r][c] && color(board[r][c]) !== turn) {
+    const enemyMoves = getLegalMoves(board, r, c, castleRights, enPassantTarget);
+    renderEnemyMovePreview(r, c, enemyMoves);
+    return;
+  }
+
+  if(turn !== 'w') return;
+
+  if(selected){
+    const isLegal = legalMoves.some(m=>m[0]===r&&m[1]===c);
+    if(isLegal){
+      clearSemiAutoHighlights();
+      semiAutoMove = null;
+      executeMove(r,c);
+      return;
+    }
+  }
+
+  if(board[r][c] && color(board[r][c])==='w'){
+    selected = [r,c];
+    legalMoves = getLegalMoves(board, r, c, castleRights, enPassantTarget);
+    renderBoard();
+  } else {
+    selected = null;
+    legalMoves = [];
+    renderBoard();
+  }
+}
+
+
+function executeMove(tr, tc, isAI=false) {
+  const fr = selected[0], fc = selected[1];
+  const piece = board[fr][fc];
+  const t = pieceType(piece);
+  const col = color(piece);
+
+  // capture
+  const captured = board[tr][tc];
+  // en passant capture piece
+  let epCapture = null;
+  if(t==='P'&&enPassantTarget&&tr===enPassantTarget[0]&&tc===enPassantTarget[1]){
+    const capRow = col==='w'?tr+1:tr-1;
+    epCapture = board[capRow][tc];
+    board[capRow][tc] = null;
+  }
+  
+  const notation = moveToNotation(board, fr, fc, tr, tc);
+
+  applyMoveToBoard(board, fr, fc, tr, tc, enPassantTarget);
+
+  // update castle rights
+  if(piece==='wK'){ castleRights.wK=false; castleRights.wQ=false; }
+  if(piece==='bK'){ castleRights.bK=false; castleRights.bQ=false; }
+  if(fr===7&&fc===7) castleRights.wK=false;
+  if(fr===7&&fc===0) castleRights.wQ=false;
+  if(fr===0&&fc===7) castleRights.bK=false;
+  if(fr===0&&fc===0) castleRights.bQ=false;
+
+  // en passant target
+  if(t==='P'&&Math.abs(tr-fr)===2){
+    enPassantTarget = [(fr+tr)/2, fc];
+  } else {
+    enPassantTarget = null;
+  }
+
+  // track captured
+  if(captured){
+    if(col==='w') capturedByWhite.push(captured);
+    else capturedByBlack.push(captured);
+  }
+  if(epCapture){
+    if(col==='w') capturedByWhite.push(epCapture);
+    else capturedByBlack.push(epCapture);
+  }
+
+  lastMove = {from:[fr,fc], to:[tr,tc]};
+  history.push({board:board.map(r=>[...r]), castleRights:{...castleRights}, enPassantTarget, lastMove, turn});
+
+  // promotion
+  const promoteRow = col==='w'?0:7;
+  if(t==='P'&&tr===promoteRow){
+    if(!isAI){
+      showPromotion(tr, tc, col, notation);
+      return;
+    } else {
+      board[tr][tc] = col+'Q';
+      moveLog.push(notation+'=Q');
+    }
+  } else {
+    moveLog.push(notation);
+  }
+
+  turn = opponent(col);
+  selected = null; legalMoves = [];
+  renderBoard();
+  renderCaptured();
+  renderMoveLog();
+  updateTurnIndicator();
+  checkGameState();
+
+  if(!gameOver && turn==='b'){
+    setTimeout(aiMove, 300);
+  }
+}
+
+function showPromotion(tr, tc, col, notation) {
+  const modal = document.getElementById('promo-modal');
+  const choices = document.getElementById('promo-choices');
+  modal.classList.add('show');
+  const options = col==='w'?['♕','♖','♗','♘']:['♛','♜','♝','♞'];
+  const types = ['Q','R','B','N'];
+  choices.innerHTML = '';
+  options.forEach((sym,i)=>{
+    const div = document.createElement('div');
+    div.className = 'promo-choice ' + (col==='w' ? 'piece-w' : 'piece-b');
+    div.textContent = sym;
+    div.onclick = ()=>{
+      board[tr][tc] = col+types[i];
+      modal.classList.remove('show');
+      moveLog.push(notation+'='+types[i]);
+      turn = turn==='w'?'b':'w';
+      selected = null; legalMoves = [];
+      renderBoard(); renderCaptured(); renderMoveLog();
+      updateTurnIndicator();
+      checkGameState();
+      if(!gameOver && turn==='b') setTimeout(aiMove, 300);
+    };
+    choices.appendChild(div);
+  });
+}
+
+function checkGameState() {
+  const allMoves = getAllLegalMoves(board, turn, castleRights, enPassantTarget);
+  const kp = findKing(turn);
+  const inCheck = kp && isSquareAttacked(board, kp[0], kp[1], opponent(turn));
+  const statusEl = document.getElementById('status-text');
+
+  if(allMoves.length===0){
+    gameOver = true;
+    if(inCheck){
+      statusEl.className = 'status-text checkmate';
+      statusEl.textContent = (turn==='b'?'白':'黒')+'の勝利！チェックメイト';
+    } else {
+      statusEl.className = 'status-text stalemate';
+      statusEl.textContent = 'ステイルメイト — 引き分け';
+    }
+    return;
+  }
+  if(inCheck){
+    statusEl.className = 'status-text check';
+    statusEl.textContent = (turn==='w'?'白':'黒')+'にチェック！';
+  } else {
+    statusEl.className = 'status-text';
+    statusEl.textContent = (turn==='w'?'白':'黒')+'番の手番';
+  }
+}
+
+// ========== AI ==========
+// Piece-square tables
+const PST = {
+  P: [
+    [0,0,0,0,0,0,0,0],
+    [50,50,50,50,50,50,50,50],
+    [10,10,20,30,30,20,10,10],
+    [5,5,10,25,25,10,5,5],
+    [0,0,0,20,20,0,0,0],
+    [5,-5,-10,0,0,-10,-5,5],
+    [5,10,10,-20,-20,10,10,5],
+    [0,0,0,0,0,0,0,0]
+  ],
+  N: [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,0,0,0,0,-20,-40],
+    [-30,0,10,15,15,10,0,-30],
+    [-30,5,15,20,20,15,5,-30],
+    [-30,0,15,20,20,15,0,-30],
+    [-30,5,10,15,15,10,5,-30],
+    [-40,-20,0,5,5,0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50]
+  ],
+  B: [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,0,0,0,0,0,0,-10],
+    [-10,0,5,10,10,5,0,-10],
+    [-10,5,5,10,10,5,5,-10],
+    [-10,0,10,10,10,10,0,-10],
+    [-10,10,10,10,10,10,10,-10],
+    [-10,5,0,0,0,0,5,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20]
+  ],
+  R: [
+    [0,0,0,0,0,0,0,0],
+    [5,10,10,10,10,10,10,5],
+    [-5,0,0,0,0,0,0,-5],
+    [-5,0,0,0,0,0,0,-5],
+    [-5,0,0,0,0,0,0,-5],
+    [-5,0,0,0,0,0,0,-5],
+    [-5,0,0,0,0,0,0,-5],
+    [0,0,0,5,5,0,0,0]
+  ],
+  Q: [
+    [-20,-10,-10,-5,-5,-10,-10,-20],
+    [-10,0,0,0,0,0,0,-10],
+    [-10,0,5,5,5,5,0,-10],
+    [-5,0,5,5,5,5,0,-5],
+    [0,0,5,5,5,5,0,-5],
+    [-10,5,5,5,5,5,0,-10],
+    [-10,0,5,0,0,0,0,-10],
+    [-20,-10,-10,-5,-5,-10,-10,-20]
+  ],
+  K: [
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [20,20,0,0,0,0,20,20],
+    [20,30,10,0,0,10,30,20]
+  ]
+};
+
+function evaluateBoard(b) {
+  let score = 0;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    const p = b[r][c];
+    if(!p) continue;
+    const col = color(p);
+    const t = pieceType(p);
+    const val = PIECE_VALUES[t] || 0;
+    const pr = col==='w' ? r : 7-r;
+    const pst = PST[t] ? PST[t][pr][c] : 0;
+    score += (col==='w'?1:-1)*(val+pst);
+  }
+  return score;
+}
+
+function minimax(b, depth, alpha, beta, maximizing, cr, ept) {
+  const col = maximizing ? 'w' : 'b';
+  const moves = getAllLegalMoves(b, col, cr, ept);
+  
+  if(depth===0 || moves.length===0){
+    return {score: evaluateBoard(b)};
+  }
+
+  // Move ordering: captures first
+  moves.sort((a,b_)=>{
+    const ca = b[a.to[0]][a.to[1]] ? 1 : 0;
+    const cb_ = b[b_.to[0]][b_.to[1]] ? 1 : 0;
+    return cb_ - ca;
+  });
+
+  let best = maximizing ? {score:-Infinity} : {score:Infinity};
+  let bestMove = moves[0];
+
+  for(const m of moves){
+    const nb = copyBoard(b);
+    const ncr = {...cr};
+    let nept = null;
+    const piece = nb[m.from[0]][m.from[1]];
+    const t = pieceType(piece);
+    const mcol = color(piece);
+    
+    if(t==='P'&&Math.abs(m.to[0]-m.from[0])===2)
+      nept = [(m.from[0]+m.to[0])/2, m.from[1]];
+    
+    applyMoveToBoard(nb, m.from[0], m.from[1], m.to[0], m.to[1], ept);
+    if(t==='P'&&(m.to[0]===0||m.to[0]===7)) nb[m.to[0]][m.to[1]] = mcol+'Q';
+    if(piece==='wK'){ncr.wK=false;ncr.wQ=false;}
+    if(piece==='bK'){ncr.bK=false;ncr.bQ=false;}
+
+    const result = minimax(nb, depth-1, alpha, beta, !maximizing, ncr, nept);
+    
+    if(maximizing){
+      if(result.score > best.score){ best={score:result.score}; bestMove=m; }
+      alpha = Math.max(alpha, best.score);
+    } else {
+      if(result.score < best.score){ best={score:result.score}; bestMove=m; }
+      beta = Math.min(beta, best.score);
+    }
+    if(beta <= alpha) break;
+  }
+  return {score: best.score, move: bestMove};
+}
+
+function aiMove() {
+  if(gameOver) return;
+  const bar = document.getElementById('thinking-bar');
+  bar.classList.add('active');
+  
+  setTimeout(()=>{
+    const depth = difficulty===1?1:difficulty===2?3:4;
+    const allMoves = getAllLegalMoves(board, 'b', castleRights, enPassantTarget);
+    if(allMoves.length===0){ bar.classList.remove('active'); return; }
+
+    let chosenMove;
+    if(difficulty===1){
+      // Random with slight preference for captures
+      const captures = allMoves.filter(m=>board[m.to[0]][m.to[1]]);
+      const pool = captures.length>0&&Math.random()<0.5 ? captures : allMoves;
+      chosenMove = pool[Math.floor(Math.random()*pool.length)];
+    } else {
+      const result = minimax(board, depth, -Infinity, Infinity, false, castleRights, enPassantTarget);
+      chosenMove = result.move || allMoves[0];
+    }
+
+    bar.classList.remove('active');
+    selected = [chosenMove.from[0], chosenMove.from[1]];
+    legalMoves = [chosenMove.to];
+    executeMove(chosenMove.to[0], chosenMove.to[1], true);
+    updateTurnIndicator();
+
+  }, difficulty===3?600:300);
+}
+
+// ========== HINT ==========
+function getHint() {
+  if(gameOver||turn!=='w') return;
+  clearSemiAutoHighlights();
+  const hintBox = document.getElementById('hint-box');
+  const bar = document.getElementById('thinking-bar');
+  bar.classList.add('active');
+  hintBox.classList.remove('visible');
+
+  setTimeout(()=>{
+    const result = minimax(board, 2, -Infinity, Infinity, true, castleRights, enPassantTarget);
+    bar.classList.remove('active');
+
+    if(result.move){
+      const m = result.move;
+      const fromAlg = toAlgebraic(m.from[0], m.from[1]);
+      const toAlg   = toAlgebraic(m.to[0], m.to[1]);
+      const piece   = board[m.from[0]][m.from[1]];
+      const sym     = PIECES[piece] || '';
+      const pName   = {K:'キング',Q:'クイーン',R:'ルーク',B:'ビショップ',N:'ナイト',P:'ポーン'}[pieceType(piece)];
+      const capture = board[m.to[0]][m.to[1]];
+      const capName = capture ? '（'+{K:'キング',Q:'クイーン',R:'ルーク',B:'ビショップ',N:'ナイト',P:'ポーン'}[pieceType(capture)]+'を取る）' : '';
+
+      hintBox.innerHTML =
+        `<span class="hint-piece">${sym}</span> ` +
+        `<span class="hint-from">${fromAlg}</span> のポジションから ` +
+        `<span class="hint-to">${toAlg}</span> へ${capName}<br>` +
+        `<span style="font-size:0.8rem;color:var(--text-muted);">${pName}を動かすのがおすすめです</span>`;
+      hintBox.classList.add('visible');
+
+      // Highlight from + to on board
+      document.querySelectorAll('.square').forEach(sq=>{
+        sq.classList.remove('hint-sq');
+        const r = parseInt(sq.dataset.r), col = parseInt(sq.dataset.c);
+        if(r===m.from[0]&&col===m.from[1]) sq.classList.add('hint-sq');
+        if(r===m.to[0]&&col===m.to[1]) sq.classList.add('hint-sq');
+      });
+      setTimeout(()=>document.querySelectorAll('.square').forEach(s=>s.classList.remove('hint-sq')), 3000);
+    }
+  }, 200);
+}
+
+// ===== ENEMY MOVE PREVIEW =====
+let showEnemyMoves = false;
+let enemyPreviewActive = false;
+
+function toggleEnemyView() {
+  showEnemyMoves = !showEnemyMoves;
+  document.getElementById('toggle-enemy').classList.toggle('on', showEnemyMoves);
+  if(!showEnemyMoves) clearEnemyPreview();
+}
+
+function renderEnemyMovePreview(fr, fc, moves) {
+  clearEnemyPreview();
+  enemyPreviewActive = true;
+  document.querySelectorAll('.square').forEach(sq=>{
+    const r=parseInt(sq.dataset.r), c=parseInt(sq.dataset.c);
+    if(r===fr&&c===fc) sq.classList.add('enemy-from');
+    if(moves.some(m=>m[0]===r&&m[1]===c)) sq.classList.add('enemy-move');
+  });
+}
+
+function clearEnemyPreview() {
+  document.querySelectorAll('.square').forEach(sq=>{
+    sq.classList.remove('enemy-from','enemy-move');
+  });
+  enemyPreviewActive = false;
+}
+
+// ===== SEMI-AUTO MODE =====
+
+
+function toggleSemiAuto() {
+  if(gameOver || turn!=='w') return;
+  // 代指し: AIが1手指す
+  const bar = document.getElementById('thinking-bar');
+  const hintBox = document.getElementById('hint-box');
+  bar.classList.add('active');
+  hintBox.classList.remove('visible');
+  clearSemiAutoHighlights();
+
+  setTimeout(()=>{
+    bar.classList.remove('active');
+    if(gameOver || turn!=='w') return;
+    const result = minimax(board, 2, -Infinity, Infinity, true, castleRights, enPassantTarget);
+    if(!result.move) return;
+    const m = result.move;
+    const piece = board[m.from[0]][m.from[1]];
+    const sym = PIECES[piece]||'';
+    const pName = {K:'キング',Q:'クイーン',R:'ルーク',B:'ビショップ',N:'ナイト',P:'ポーン'}[pieceType(piece)];
+    const fromAlg = toAlgebraic(m.from[0], m.from[1]);
+    const toAlg   = toAlgebraic(m.to[0], m.to[1]);
+    const capture = board[m.to[0]][m.to[1]];
+    const capTxt  = capture ? '（'+{K:'キング',Q:'クイーン',R:'ルーク',B:'ビショップ',N:'ナイト',P:'ポーン'}[pieceType(capture)]+'を取る）' : '';
+
+    // Execute the move as if the player did it
+    selected = [m.from[0], m.from[1]];
+    legalMoves = [m.to];
+    executeMove(m.to[0], m.to[1], false);
+
+    // Show what was played
+    hintBox.innerHTML =
+      `🤝 <span class="hint-piece">${sym}</span> ` +
+      `<span class="hint-from">${fromAlg}</span> → ` +
+      `<span class="hint-to">${toAlg}</span>${capTxt}<br>` +
+      `<span style="font-size:0.8rem;color:var(--text-muted);">${pName}をAIが代わりに指しました</span>`;
+    hintBox.classList.add('visible');
+  }, 300);
+}
+
+function showSemiAutoSuggestion() {} // no-op, kept for aiMove reference
+
+function clearSemiAutoHighlights() {
+  document.querySelectorAll('.square').forEach(sq=>{
+    sq.classList.remove('semiauto-from','semiauto-to');
+  });
+}
+
+
+// ========== UNDO ==========
+
+// ========== UNDO ==========
+function undoMove() {
+  // Undo 2 moves (player + AI)
+  const steps = turn==='w' && history.length>=2 ? 2 : (history.length>=1 ? 1 : 0);
+  if(steps===0) return;
+  
+  for(let i=0;i<steps;i++){
+    if(history.length>0){
+      history.pop();
+      moveLog.pop();
+    }
+  }
+  
+  if(history.length>0){
+    const prev = history[history.length-1];
+    for(let r=0;r<8;r++) board[r]=[...prev.board[r]];
+    castleRights = {...prev.castleRights};
+    enPassantTarget = prev.enPassantTarget;
+    lastMove = prev.lastMove;
+  } else {
+    initBoard();
+    castleRights = {wK:true,wQ:true,bK:true,bQ:true};
+    enPassantTarget = null;
+    lastMove = null;
+    capturedByWhite = [];
+    capturedByBlack = [];
+  }
+  
+  turn = 'w';
+  selected = null; legalMoves = []; gameOver = false;
+  renderBoard(); renderCaptured(); renderMoveLog();
+  updateTurnIndicator();
+  document.getElementById('status-text').className='status-text';
+  document.getElementById('status-text').textContent='白番の手番';
+}
+
+// ========== TUTORIAL ENGINE ==========
+const PIECES_TUT = {
+  wK:'♔',wQ:'♕',wR:'♖',wB:'♗',wN:'♘',wP:'♙',
+  bK:'♔',bQ:'♕',bR:'♖',bB:'♗',bN:'♘',bP:'♙'
+};
+
+// Tutorial board state
+let tutBoard = null;
+let tutSelected = null;
+let tutStep = 0;
+let tutWaiting = false; // waiting for user interaction
+
+// ---- Step definitions ----
+// type: 'read'  = just read, click 次へ
+// type: 'click' = click a specific square (selectPiece)
+// type: 'move'  = move a piece from→to (after clicking selectPiece)
+// type: 'any'   = move any legal piece anywhere on tutBoard
+const TUT_STEPS = [
+  // 0 — Welcome
+  {
+    type: 'read',
+    badge: 'STEP 1',
+    title: 'チェスへようこそ！',
+    body: 'チェスは2人で行うボードゲームです。<br><br>8×8のマス目の上で、お互いに駒を動かし合います。<b>相手のキングを逃げられない状態（チェックメイト）にした側が勝ち</b>です。<br><br>まずは盤の初期配置を見てみましょう。<b>白（あなた）</b>が下、<b>黒（AI）</b>が上に並んでいます。',
+    caption: '▼ ゲーム開始時の配置',
+    board: () => makeFull(),
+    highlights: [],
+    showLegend: false,
+  },
+  // 1 — Pieces intro
+  {
+    type: 'read',
+    badge: 'STEP 2',
+    title: '6種類の駒',
+    body: '各プレイヤーは<b>16個</b>の駒を持ちます。<br><br>♔ キング（×1）— 最も大切な駒<br>♕ クイーン（×1）— 最強の攻撃力<br>♖ ルーク（×2）— 縦横に強い<br>♗ ビショップ（×2）— 斜めに強い<br>♘ ナイト（×2）— L字に跳ぶ<br>♙ ポーン（×8）— 前進する歩兵<br><br>それぞれの動き方を、次のステップで実際に確認しましょう！',
+    caption: '▼ 白の駒一覧（下2段）',
+    board: () => makeFull(),
+    highlights: (b) => allSquaresOf(b,'w'),
+    highlightClass: 'thg',
+    showLegend: false,
+  },
+  // 2 — Pawn: click to select
+  {
+    type: 'click',
+    badge: 'STEP 3',
+    title: 'ポーンの動かし方',
+    body: 'ポーン（♙）は<b>前に1マス</b>進みます。ゲーム開始直後だけ<b>2マス</b>進むこともできます。<br><br>また、斜め前の相手駒だけを取ることができます（正面は取れません）。<br><br><b>e2のポーンをクリック</b>してみましょう。',
+    task: 'e2 のポーン（♙）をクリックしてください',
+    caption: '▼ e2 のポーンをクリック！',
+    board: () => makeFull(),
+    highlights: [[6,4]],
+    highlightClass: 'thg',
+    targetClick: [6,4],
+    showLegend: false,
+  },
+  // 3 — Pawn: move
+  {
+    type: 'move',
+    badge: 'STEP 3',
+    title: 'ポーンを動かそう',
+    body: '緑の点が<b>移動できるマス</b>です。<br>ポーンは今、e3またはe4（2マス先）に進めます。<br><br>好きなマスに<b>クリックして移動</b>させましょう！',
+    task: '緑のマスのどれかをクリックして移動してください',
+    caption: '▼ 緑のマスに移動できます',
+    board: () => makeFull(),
+    selectedSq: [6,4],
+    highlights: [[5,4],[4,4]],
+    highlightClass: 'thl',
+    allowedMoves: { from:[6,4], to:[[5,4],[4,4]] },
+    showLegend: true,
+    okText: 'うまく動かせました！ポーンは前に進む駒です。',
+  },
+  // 4 — Rook
+  {
+    type: 'read',
+    badge: 'STEP 4',
+    title: 'ルークの動かし方',
+    body: 'ルーク（♖）は<b>縦・横に何マスでも</b>移動できます。<br><br>斜めには動けませんが、盤を縦横に走り回れる強力な駒です。<br><br>相手の駒のいるマスまで進んでその駒を取ることもできます（そのマスの手前まで）。',
+    caption: '▼ ルークが動けるマス（青）',
+    board: () => { const b = emptyBoard(); b[4][4]='wR'; return b; },
+    highlights: (b) => rookMoves([4,4]),
+    highlightClass: 'thb',
+    showLegend: false,
+  },
+  // 5 — Bishop
+  {
+    type: 'read',
+    badge: 'STEP 5',
+    title: 'ビショップの動かし方',
+    body: 'ビショップ（♗）は<b>斜めに何マスでも</b>移動できます。<br><br>縦横には動けませんが、斜めのラインを支配する駒です。<br><br>注意点：ビショップは<b>最初に置かれたマスの色</b>しか動けません（白マス専用・黒マス専用が1枚ずつ）。',
+    caption: '▼ ビショップが動けるマス（青）',
+    board: () => { const b = emptyBoard(); b[4][4]='wB'; return b; },
+    highlights: (b) => bishopMoves([4,4]),
+    highlightClass: 'thb',
+    showLegend: false,
+  },
+  // 6 — Knight
+  {
+    type: 'read',
+    badge: 'STEP 6',
+    title: 'ナイトの動かし方',
+    body: 'ナイト（♘）は<b>L字型</b>に動きます。「縦2＋横1」か「縦1＋横2」の方向に飛びます。<br><br>チェスで<b>唯一、他の駒を飛び越えられる</b>特別な駒です。<br>囲まれた状況でも活躍できます！',
+    caption: '▼ ナイトが跳べるマス（青）',
+    board: () => { const b = emptyBoard(); b[4][4]='wN'; return b; },
+    highlights: () => knightDests([4,4]),
+    highlightClass: 'thb',
+    showLegend: false,
+  },
+  // 7 — Queen
+  {
+    type: 'read',
+    badge: 'STEP 7',
+    title: 'クイーンの動かし方',
+    body: 'クイーン（♕）は<b>縦・横・斜め、どの方向にも何マスでも</b>動けます。<br><br>ルークとビショップを合わせた最強の駒です。<br>絶対に相手に取られないよう大切に守りましょう！',
+    caption: '▼ クイーンが動けるマス（青）',
+    board: () => { const b = emptyBoard(); b[4][4]='wQ'; return b; },
+    highlights: (b) => rookMoves([4,4]).concat(bishopMoves([4,4])),
+    highlightClass: 'thb',
+    showLegend: false,
+  },
+  // 8 — King
+  {
+    type: 'read',
+    badge: 'STEP 8',
+    title: 'キングの動かし方',
+    body: 'キング（♔）は<b>上下左右・斜めの1マスだけ</b>移動できます。<br><br>ゆっくりしか動けませんが、最も大切な駒です。<b>キングを失う（チェックメイト）とゲームオーバー</b>になるので、常に安全な場所に置いておきましょう。',
+    caption: '▼ キングが動けるマス（青）',
+    board: () => { const b = emptyBoard(); b[4][4]='wK'; return b; },
+    highlights: () => kingDests([4,4]),
+    highlightClass: 'thb',
+    showLegend: false,
+  },
+  // 9 — Check
+  {
+    type: 'read',
+    badge: 'STEP 9',
+    title: 'チェック！',
+    body: '相手の駒に<b>キングが攻撃されている状態</b>を「<b>チェック</b>」といいます。<br><br>チェックされたら、その手番で<b>必ず</b>解消しなければなりません。解消方法は3つです：<br><ul><li>キングを逃げる</li><li>攻撃駒を取る</li><li>キングと攻撃駒の間に割り込む</li></ul>',
+    caption: '▼ 白キングがルークにチェックされている',
+    board: () => {
+      const b = emptyBoard();
+      b[7][4]='wK'; b[5][4]='bR'; b[0][0]='bK';
+      return b;
+    },
+    highlights: [[5,4]],
+    highlightClass: 'thc',
+    checkSqs: [[7,4]],
+    showLegend: false,
+  },
+  // 10 — Escape check: move king
+  {
+    type: 'move',
+    badge: 'STEP 9',
+    title: 'チェックから逃げよう',
+    body: 'キングが<b>赤く光っている</b>のはチェックされているサインです。<br><br>キングを安全なマスに動かしてチェックを解消しましょう。<b>白キングをクリック</b>して、逃げ先を選んでください。',
+    task: 'キング（♔）をクリックして、安全なマスへ逃げてください',
+    caption: '▼ キングをクリックして逃げよう',
+    board: () => {
+      const b = emptyBoard();
+      b[7][4]='wK'; b[5][4]='bR'; b[0][0]='bK';
+      return b;
+    },
+    highlights: [[7,4]],
+    highlightClass: 'thg',
+    checkSqs: [[7,4]],
+    allowedMoves: { from:[7,4], to:[[7,3],[7,5],[6,3],[6,5]] },
+    showLegend: false,
+    okText: 'チェックを解消できました！キングを常に守るのが基本です。',
+  },
+  // 11 — Castling
+  {
+    type: 'read',
+    badge: 'STEP 10',
+    title: '特殊ルール：キャスリング',
+    body: 'キャスリングは<b>キングとルークを同時に動かす</b>唯一の手です。<br><br>キングを2マス横に動かすと、ルークがキングを飛び越えて反対側に移動します。<br><br><b>条件：</b><ul><li>キング・ルークどちらも一度も動いていない</li><li>間に他の駒がいない</li><li>キングがチェック中でない</li><li>通過するマスが攻撃されていない</li></ul>キングを安全な角に逃がしつつ、ルークを活躍させる重要な手です。',
+    caption: '▼ キングをg1に動かす→ルークが自動でf1へ',
+    board: () => {
+      const b = emptyBoard();
+      b[7][4]='wK'; b[7][7]='wR'; b[0][4]='bK';
+      return b;
+    },
+    highlights: [[7,6]],
+    highlightClass: 'thg',
+    arrowFrom: [7,4], arrowTo: [7,6],
+    showLegend: false,
+  },
+  // 12 — Checkmate (final)
+  {
+    type: 'read',
+    badge: 'STEP 11',
+    title: 'チェックメイト — 勝利！',
+    body: '相手のキングが<b>チェックされていて、どうしても逃げられない</b>状態が「<b>チェックメイト</b>」です。この瞬間にゲーム終了です！<br><br>左の盤面は「スカラーズメイト」と呼ばれる4手詰めの有名な例です。黒キングはどこにも逃げられません。<br><br>これでチュートリアル完了です！実際のゲームで試してみましょう。',
+    caption: '▼ 黒キングはチェックメイト（逃げ場なし）',
+    board: () => {
+      const b = emptyBoard();
+      b[0][5]='wB'; b[1][7]='wQ';
+      b[0][4]='bK'; b[0][6]='bN'; b[1][5]='bP'; b[1][6]='bP'; b[1][4]='bP';
+      b[7][4]='wK';
+      return b;
+    },
+    highlights: [],
+    checkSqs: [[0,4]],
+    showLegend: false,
+    isLast: true,
+  },
+];
+
+// ---- Board helpers ----
+function emptyBoard() { return Array(8).fill(null).map(()=>Array(8).fill(null)); }
+function makeFull() {
+  const b = emptyBoard();
+  const br=['R','N','B','Q','K','B','N','R'];
+  for(let c=0;c<8;c++){b[0][c]='b'+br[c];b[1][c]='bP';b[6][c]='wP';b[7][c]='w'+br[c];}
+  return b;
+}
+function allSquaresOf(b, col) {
+  const r=[];
+  for(let row=0;row<8;row++)for(let c=0;c<8;c++)if(b[row][c]&&b[row][c][0]===col)r.push([row,c]);
+  return r;
+}
+function rookMoves([r,c]) {
+  const m=[];
+  for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){let nr=r+dr,nc=c+dc;while(nr>=0&&nr<8&&nc>=0&&nc<8){m.push([nr,nc]);nr+=dr;nc+=dc;}}
+  return m;
+}
+function bishopMoves([r,c]) {
+  const m=[];
+  for(const [dr,dc] of [[1,1],[1,-1],[-1,1],[-1,-1]]){let nr=r+dr,nc=c+dc;while(nr>=0&&nr<8&&nc>=0&&nc<8){m.push([nr,nc]);nr+=dr;nc+=dc;}}
+  return m;
+}
+function knightDests([r,c]) {
+  return [[2,1],[2,-1],[-2,1],[-2,-1],[1,2],[1,-2],[-1,2],[-1,-2]]
+    .map(([dr,dc])=>[r+dr,c+dc]).filter(([nr,nc])=>nr>=0&&nr<8&&nc>=0&&nc<8);
+}
+function kingDests([r,c]) {
+  return [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]
+    .map(([dr,dc])=>[r+dr,c+dc]).filter(([nr,nc])=>nr>=0&&nr<8&&nc>=0&&nc<8);
+}
+
+// ---- Tutorial board render ----
+function renderTutBoard(step) {
+  const el = document.getElementById('tut-board');
+  if(!el) return;
+
+  const b = typeof step.board === 'function' ? step.board() : makeFull();
+  tutBoard = b.map(r=>[...r]);
+
+  let rawHL = step.highlights || [];
+  if(typeof rawHL === 'function') rawHL = rawHL(tutBoard);
+  const hlClass = step.highlightClass || 'thl';
+  const checkSqs = step.checkSqs || [];
+  const selSq = step.selectedSq || null;
+
+  el.innerHTML = '';
+  for(let r=0;r<8;r++){
+    for(let c=0;c<8;c++){
+      const sq = document.createElement('div');
+      const isLight = (r+c)%2===0;
+      sq.className = 'tut-sq ' + (isLight?'light':'dark');
+      sq.dataset.r = r; sq.dataset.c = c;
+
+      // highlights
+      const isHL = rawHL.some(h=>Array.isArray(h)?h[0]===r&&h[1]===c:h.r===r&&h.c===c);
+      if(isHL) sq.classList.add(hlClass);
+      if(checkSqs.some(([cr,cc])=>cr===r&&cc===c)) sq.classList.add('tcheck');
+      if(selSq&&selSq[0]===r&&selSq[1]===c) sq.classList.add('tsel');
+
+      if(b[r][c]){
+        const p = document.createElement('div');
+        p.className = 'tpiece ' + (b[r][c][0]==='w' ? 'tpiece-w' : 'tpiece-b');
+        p.textContent = PIECES_TUT[b[r][c]]||'';
+        sq.appendChild(p);
+      }
+
+      sq.addEventListener('click', ()=>handleTutClick(r,c));
+      el.appendChild(sq);
+    }
+  }
+}
+
+function renderTutMoveHints(from, toList) {
+  // clear existing dots
+  document.querySelectorAll('#tut-board .tmove-dot, #tut-board .tcap-ring').forEach(e=>e.remove());
+  document.querySelectorAll('#tut-board .tut-sq').forEach(sq=>{
+    sq.classList.remove('tsel','thl','thc','thb','thg');
+  });
+  // mark selected
+  getTutSq(from[0],from[1])?.classList.add('tsel');
+  // mark destinations
+  toList.forEach(([tr,tc])=>{
+    const sq = getTutSq(tr,tc);
+    if(!sq) return;
+    if(tutBoard[tr][tc]){
+      const ring = document.createElement('div'); ring.className='tcap-ring';
+      sq.appendChild(ring);
+    } else {
+      const dot = document.createElement('div'); dot.className='tmove-dot';
+      sq.appendChild(dot);
+    }
+  });
+}
+
+function getTutSq(r,c){
+  return document.querySelector(`#tut-board .tut-sq[data-r="${r}"][data-c="${c}"]`);
+}
+
+function applyTutMove(fr,fc,tr,tc){
+  const sq_from = getTutSq(fr,fc);
+  const sq_to = getTutSq(tr,tc);
+  if(sq_to) sq_to.querySelectorAll('.tmove-dot,.tcap-ring').forEach(e=>e.remove());
+
+  const piece = tutBoard[fr][fc];
+  tutBoard[tr][tc] = piece;
+  tutBoard[fr][fc] = null;
+
+  // Update DOM
+  if(sq_from){ sq_from.innerHTML=''; sq_from.classList.remove('tsel','thl','thg','thb','thc'); }
+  if(sq_to){ sq_to.innerHTML=''; sq_to.classList.remove('tsel','thl','thg','thb','thc'); }
+  if(piece && sq_to){
+    const p = document.createElement('div');
+    p.className = 'tpiece ' + (piece[0]==='w' ? 'tpiece-w' : 'tpiece-b');
+    p.textContent = PIECES_TUT[piece]||'';
+    sq_to.appendChild(p);
+  }
+}
+
+let tutClickState = null; // {waitingMove: bool, from:[r,c], allowed:[[r,c],...]}
+
+function handleTutClick(r,c){
+  const step = TUT_STEPS[tutStep];
+  if(!step) return;
+
+  // Click-to-select step
+  if(step.type==='click'){
+    const target = step.targetClick;
+    if(target && target[0]===r && target[1]===c){
+      showTutOk(step.okText||'正解！');
+      // Show move dots from next step's moves
+      const nextStep = TUT_STEPS[tutStep+1];
+      if(nextStep&&nextStep.allowedMoves){
+        renderTutMoveHints(nextStep.allowedMoves.from, nextStep.allowedMoves.to);
+      }
+      document.getElementById('tut-next').classList.add('primary');
+      tutWaiting = false;
+      document.getElementById('tut-next').disabled = false;
+    } else {
+      flashWrong(r,c);
+    }
+    return;
+  }
+
+  // Move step
+  if(step.type==='move'){
+    const am = step.allowedMoves;
+    if(!am) return;
+
+    if(!tutClickState){
+      // First click: select piece
+      if(r===am.from[0]&&c===am.from[1]){
+        tutClickState = {waitingMove:true, from:[r,c], allowed:am.to};
+        renderTutMoveHints([r,c], am.to);
+      } else if(tutBoard[r][c]&&tutBoard[r][c][0]==='w'){
+        flashWrong(r,c);
+      }
+    } else {
+      // Second click: move to destination
+      const ok = tutClickState.allowed.some(([tr,tc])=>tr===r&&tc===c);
+      if(ok){
+        applyTutMove(tutClickState.from[0],tutClickState.from[1],r,c);
+        tutClickState = null;
+        showTutOk(step.okText||'うまく動かせました！');
+        document.getElementById('tut-next').classList.add('primary');
+        document.getElementById('tut-next').disabled = false;
+        tutWaiting = false;
+        document.getElementById('tut-skip').style.display='none';
+      } else if(r===tutClickState.from[0]&&c===tutClickState.from[1]){
+        // Deselect
+        tutClickState = null;
+        renderTutBoard(step);
+      } else {
+        flashWrong(r,c);
+      }
+    }
+    return;
+  }
+}
+
+function flashWrong(r,c){
+  const sq = getTutSq(r,c);
+  if(!sq) return;
+  sq.style.outline='2px solid rgba(255,80,80,0.8)';
+  setTimeout(()=>sq.style.outline='',400);
+}
+
+function showTutOk(text){
+  const box = document.getElementById('tut-ok');
+  document.getElementById('tut-ok-text').textContent = text||'正解！';
+  box.style.display='flex';
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+// ---- Navigation ----
+function openTutorial(){
+  document.getElementById('tutorial-modal').classList.add('show');
+  tutStep = 0;
+  loadTutStep(tutStep);
+}
+function closeTutorial(){
+  document.getElementById('tutorial-modal').classList.remove('show');
+  tutClickState = null;
+}
+function tutNav(dir){
+  const next = tutStep + dir;
+  if(next<0||next>=TUT_STEPS.length) return;
+  if(dir>0 && TUT_STEPS[tutStep].type==='click' && tutWaiting) return; // must do the click
+  tutStep = next;
+  tutClickState = null;
+  loadTutStep(tutStep);
+}
+function tutSkip(){
+  tutWaiting = false;
+  document.getElementById('tut-skip').style.display='none';
+  document.getElementById('tut-next').disabled=false;
+  document.getElementById('tut-next').classList.add('primary');
+}
+function loadTutStep(n){
+  const step = TUT_STEPS[n];
+  const total = TUT_STEPS.length;
+
+  // Progress
+  document.getElementById('tut-prog').style.width = ((n+1)/total*100)+'%';
+  document.getElementById('tut-step-lbl').textContent = (n+1)+' / '+total;
+
+  // Left panel
+  document.getElementById('tut-badge').textContent = step.badge||('STEP '+(n+1));
+  document.getElementById('tut-title').textContent = step.title||'';
+  document.getElementById('tut-body').innerHTML = step.body||'';
+
+  // Task box
+  const taskBox = document.getElementById('tut-task');
+  if(step.task){
+    document.getElementById('tut-task-text').textContent = step.task;
+    taskBox.style.display='block';
+  } else {
+    taskBox.style.display='none';
+  }
+
+  // OK box
+  document.getElementById('tut-ok').style.display='none';
+
+  // Caption
+  document.getElementById('tut-caption').textContent = step.caption||'';
+
+  // Legend
+  document.getElementById('tut-legend').style.display = step.showLegend ? 'flex' : 'none';
+
+  // Nav buttons
+  document.getElementById('tut-prev').disabled = n===0;
+  const nextBtn = document.getElementById('tut-next');
+  nextBtn.classList.remove('primary');
+
+  if(step.isLast){
+    nextBtn.textContent = '✦ ゲームを始める';
+    nextBtn.onclick = ()=>closeTutorial();
+    nextBtn.disabled = false;
+  } else {
+    nextBtn.textContent = '次へ →';
+    nextBtn.onclick = ()=>tutNav(1);
+    nextBtn.disabled = false;
+  }
+
+  // Skip button
+  const skipBtn = document.getElementById('tut-skip');
+  if(step.type==='click'||step.type==='move'){
+    skipBtn.style.display='block';
+    tutWaiting = true;
+  } else {
+    skipBtn.style.display='none';
+    tutWaiting = false;
+  }
+
+  // Render board
+  renderTutBoard(step);
+
+  // Scroll left panel to top
+  document.querySelector('.tut-left').scrollTop=0;
+}
+
+// ========== INIT ==========
+newGame();
+</script>
+</body>
+</html>
